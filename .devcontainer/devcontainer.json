@@ -1,0 +1,15 @@
+{
+    "name": "EE-LLM Dev",
+    "workspaceFolder": "/workspace/EE-LLM",
+    "containerEnv": {
+      "PYTHONPATH": "/workspace/EE-LLM"
+    },
+    "runArgs": [
+      "--device=nvidia.com/gpu=all",
+      "--security-opt=label=disable",
+      "-v", "/home/student.unimelb.edu.au/bxb1/checkpoints:/workspace/checkpoints",
+      "-v", "/home/student.unimelb.edu.au/bxb1/EE-LLM:/workspace/EE-LLM"
+    ],
+    "image": "nvcr.io/nvidia/pytorch:22.12-py3"
+  }
+  
