@@ -1,0 +1,40 @@
+version: "3.8"
+
+networks:
+  megatron-net:
+    driver: bridge       # Podman 默认就是 bridge，显式写更直观
+
+x-common: &common        # 🔄 公共配置片段，避免重复
+  image: ee-llm:latest
+  networks:
+    - megatron-net
+  volumes:
+    # 挂载权重与资产，确保两段都读得到
+    - /home/student.unimelb.edu.au/bxb1/assets:/workspace/assets:Z
+  env_file:
+    - .env
+  devices:
+    # Podman 原生支持 CDI 语法：--device=nvidia.com/gpu=all
+    - "nvidia.com/gpu=all"
+  security_opt:
+    - label=disable
+  ipc: host                           # 用宿主 /dev/shm 避免 shm_size 被忽略:contentReference[oaicite:2]{index=2}
+  shm_size: "10g" 
+
+services:
+  stage0:
+    <<: *common
+    container_name: stage0 
+    ports:
+      - "8000:5000"                  # 仅首段暴露推理服务
+    environment:
+      NODE_RANK: "0"
+      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "25"
+      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "10GB"
+  stage1:
+    <<: *common
+    container_name: stage1
+    environment:
+      NODE_RANK: "1"
+      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "25"
+      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "10GB"
