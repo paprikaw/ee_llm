@@ -4,7 +4,7 @@ ARG FLASH_ATTEN_WHEEL=flash_attn-2.7.0.post2-cp38-cp38-linux_x86_64.whl
 WORKDIR /workspace/EE-LLM
 
 # 拷贝项目源码
-COPY . /workspace/EE-LLM
+# COPY . /workspace/EE-LLM
 
 # 安装挂载进来的 wheel
 RUN pip install "/workspace/wheelhouse/${FLASH_ATTEN_WHEEL}"

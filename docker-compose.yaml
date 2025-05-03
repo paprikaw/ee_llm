@@ -10,7 +10,9 @@ x-common: &common        # 🔄 公共配置片段，避免重复
     - megatron-net
   volumes:
     # 挂载权重与资产，确保两段都读得到
-    - /home/student.unimelb.edu.au/bxb1/assets:/workspace/assets:Z
+    - /extrastorage/bxstorage/4180-llm/assets:/workspace/assets:Z
+    - /home/student.unimelb.edu.au/bxb1/GPU_benchmark:/workspace/GPU_benchmark:Z
+    - /home/student.unimelb.edu.au/bxb1/EE-LLM:/workspace/EE-LLM:Z
   env_file:
     - .env
   devices:
@@ -19,22 +21,22 @@ x-common: &common        # 🔄 公共配置片段，避免重复
   security_opt:
     - label=disable
   ipc: host                           # 用宿主 /dev/shm 避免 shm_size 被忽略:contentReference[oaicite:2]{index=2}
-  shm_size: "10g" 
+  shm_size: "20g" 
 
 services:
   stage0:
     <<: *common
-    container_name: stage0 
+    container_name: stage0
     ports:
       - "8000:5000"                  # 仅首段暴露推理服务
     environment:
       NODE_RANK: "0"
-      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "25"
-      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "10GB"
+      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "100"
+      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "20GB"
   stage1:
     <<: *common
     container_name: stage1
     environment:
       NODE_RANK: "1"
-      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "25"
-      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "10GB"
+      CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: "100"
+      CUDA_MPS_PINNED_DEVICE_MEM_LIMIT: "20GB"

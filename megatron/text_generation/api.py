@@ -1,6 +1,47 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-"""Inference API."""
+"""
+Inference API Module
+
+This file defines the high-level entry points for running text generation
+and scoring with a Megatron-LM model in both pipeline-parallel and single-GPU
+settings. It handles:
+
+  • Broadcasting of inference parameters (tokens_to_generate, sampling & early-exit flags)
+    across all pipeline ranks.
+
+  • Prompt tokenization and construction of input tensors.
+
+  • Invocation of the core generation routines:
+      - generate_tokens_probs_and_return_on_first_stage()
+      - generate_with_pipelined_early_exit_and_return_on_first_stage()
+      - score_and_return_on_first_stage()
+      - beam_search_and_return_on_first_stage()
+
+  • Post-processing on the first pipeline stage:
+      - Detokenizing outputs into human-readable strings.
+      - Trimming log-prob arrays to actual generation lengths.
+      - Converting tensors to CPU/Numpy lists for downstream consumption.
+
+  • Beam search support with:
+      - beam_search()
+      - beam_search_and_post_process()
+
+Public functions:
+  - generate_and_post_process(model, prompts, …)
+      Run sampling or greedy generation, apply early-exit if enabled, then
+      detokenize and return (strings, segments, log_probs, token_ids[, logits]).
+
+  - generate(model, prompts, …)
+      Low-level orchestrator that broadcasts config, tokenizes prompts,
+      and dispatches to the appropriate generate_* routine.
+
+  - beam_search_and_post_process(model, prompts, …)
+      Execute beam search, then detokenize and return (strings, segments, scores).
+
+  - beam_search(model, prompts, …)
+      Broadcast beam parameters, tokenize prompts, and call beam_search_and_return_on_first_stage().
+"""
 
 
 import torch
@@ -157,6 +198,8 @@ def generate(model,
     stop_tokens_length = int(values_float_tensor[16].item())
     exit_layers_length = int(values_float_tensor[17].item())
 
+        
+
     if stop_tokens_length > 0:
         stop_token_ids = broadcast_float_list(stop_tokens_length, float_list=stop_token_ids)
     else:
@@ -166,7 +209,15 @@ def generate(model,
         exit_layers = broadcast_float_list(exit_layers_length, float_list=exit_layers).int().cpu().numpy().tolist()
     else:
         exit_layers = []
-
+    if torch.distributed.get_rank() == 0:
+        print(f"""
+rank {torch.distributed.get_rank()} global values:
+  tokens_to_generate: {tokens_to_generate}
+  return_output_log_probs: {return_output_log_probs}
+  use_stop_tokens_for_early_termination: {use_stop_tokens_for_early_termination}
+  stop_tokens_length: {stop_tokens_length}
+  exit_layers_length: {exit_layers_length}
+        """)
     if random_seed != -1:
         torch.random.manual_seed(random_seed)
 
@@ -174,10 +225,16 @@ def generate(model,
     # Note that these tensors are broadcaseted to all ranks.
     if torch.distributed.get_rank() == 0:
         assert prompts is not None
-
+    # 只有在stage 0上才会tokenize，其他stage会接受stage 0 tokenize的结果
     context_tokens_tensor, context_length_tensor = tokenize_prompts(
         prompts=prompts, tokens_to_generate=tokens_to_generate, add_BOS=add_BOS)
-
+#     print(f"""
+# rank {torch.distributed.get_rank()}: 
+# context_tokens_tensor: 
+# {context_tokens_tensor}
+# context_length_tensor: 
+# {context_length_tensor}
+# """)
     if tokens_to_generate == 0:
         return score_and_return_on_first_stage(
             model, context_tokens_tensor, context_length_tensor)

@@ -214,7 +214,6 @@ def send_token_and_probs_to_first_pipeline_stage(inference_params, token_tensor=
 
 
 def recv_token_and_probs(inference_params, token_tensor_buffer, prob_tensor_buffer):
-
     is_contiguous = token_tensor_buffer.is_contiguous()
     if is_contiguous:
         token_tensor_ = token_tensor_buffer
@@ -235,6 +234,7 @@ def recv_token_and_probs(inference_params, token_tensor_buffer, prob_tensor_buff
             prob_tensor_buffer[...] = inference_params.probs
             return
 
+
     exit_stages = get_exit_stages()
     if exit_stages[0] == 0:
         exit_stages.pop(0)
@@ -247,7 +247,6 @@ def recv_token_and_probs(inference_params, token_tensor_buffer, prob_tensor_buff
             dist.recv(tensor=token_tensor_, src=stage_id, group=mpu.get_pipeline_model_parallel_group())
             dist.recv(tensor=prob_tensor_, src=stage_id, group=mpu.get_pipeline_model_parallel_group())
             break
-
     if not is_contiguous:
         token_tensor_buffer[...] = token_tensor_
         prob_tensor_buffer[...] = prob_tensor_
@@ -291,6 +290,5 @@ def broadcast_int_list(size, int_list=None, rank=0):
 
 def broadcast_float_list(size, float_list=None, rank=0):
     """Broadcast a list of float values."""
-
     return broadcast_list(size, torch.float32, list_values=float_list,
                           rank=rank)

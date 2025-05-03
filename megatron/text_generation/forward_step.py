@@ -17,9 +17,31 @@ from .communication import (
 
 
 class ForwardStep:
-    """Forward step function with all the communications.
-    We use a class here to hide the inference parameters
-    from the outside caller."""
+    """
+    Encapsulates one “step” of model forward execution, handling both
+    pipelined communication and early-exit logic for inference.
+
+    Responsibilities:
+      1. Manage model.eval() invocation and inference parameter injection.
+      2. Route tensors through pipeline stages:
+         - recv from previous rank
+         - invoke model(tokens, positions, mask, inference_params)
+         - send outputs to next rank
+      3. Support non-pipelined vs. pipelined micro-batch execution:
+         - `_no_pipelining_forward_step()` for single-pass
+         - `_with_pipelining_forward_step()` for batch→micro-batch slicing
+      4. Integrate early-exit pipelining:
+         - `_with_early_exit_pipelining_forward_step()` to recv/send
+           early-exit signals alongside activations
+      5. Track and update `InferenceParams` offsets:
+         - `sequence_len_offset` and `batch_size_offset` for caching
+         - propagate `has_early_exited` flags across pipeline
+
+    Usage:
+        forward = ForwardStep(model, inference_params=my_params)
+        logits = forward(tokens, position_ids, attention_mask)
+        # logits is only non-None on the last pipeline stage
+    """
 
     def __init__(self, model, max_batch_size=0, max_sequence_length=0, early_exit_thres=0, inference_params=None):
         """Set values so we don't need to do it multiple times."""
@@ -191,7 +213,45 @@ def _allocate_early_exit_recv_buffers(batch_size, sequence_length):
 
 def _with_early_exit_pipelining_forward_step(model, tokens, position_ids, attention_mask,
                                   inference_params):
-    """No interleaving is supported."""
+    """
+    Perform a single forward pass in a pipeline-parallel setting with early-exit support.
+
+    This helper function:
+      1. Receives activations and an early-exit flag from the previous pipeline stage.
+      2. Updates `inference_params.prev_has_early_exited` based on the received flag.
+      3. Calls the model’s forward method with `inference_params`, which may set
+         `inference_params.has_early_exited` if its own early-exit criteria are met.
+      4. Builds a 1-element `signal_tensor` encoding whether any stage (previous or current)
+         has triggered early-exit.
+      5. Sends `[output_tensor, signal_tensor]` to the next pipeline stage.
+      6. Increments `inference_params.sequence_len_offset` by the full sequence length.
+
+    Args:
+        model (torch.nn.Module):
+            The language model already in eval mode.
+        tokens (torch.Tensor):
+            Input token IDs, shape [batch_size, sequence_length].
+        position_ids (torch.Tensor):
+            Positional IDs matching `tokens`, same shape.
+        attention_mask (torch.Tensor):
+            Causal attention mask for the current sequence slice.
+        inference_params (InferenceParams):
+            Carries sampling hyperparameters, KV‐cache, and early‐exit state.
+
+    Returns:
+        torch.Tensor:
+            The output activation tensor from this stage, of shape
+            [batch_size, sequence_length, hidden_size].
+
+    Raises:
+        AssertionError:
+            If `batch_size != 1`, since early-exit is currently only supported
+            for single-sample inference.
+
+    Communication:
+        - Uses `recv_list_from_prev_pipeline_rank` to get `[activations, exit_flag]`
+        - Uses `send_list_to_next_pipeline_rank` to forward `[output_tensor, signal_tensor]`
+    """
     sequence_length = tokens.size(1)
     batch_size = tokens.size(0)
     assert batch_size == 1, "early exit not support batch inference yet"

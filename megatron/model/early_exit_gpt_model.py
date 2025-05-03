@@ -186,6 +186,7 @@ class EarlyExitGPTModel(MegatronModule):
                 self.parallel_output,
                 self.fp16_lm_cross_entropy)
         if self.has_early_exit and inference_params is None:
+            print("early_exit_output: ", early_exit_output)
             return lm_output, early_exit_output
         else:
             return lm_output

@@ -67,6 +67,7 @@ if __name__ == "__main__":
             except ValueError as ve:
                 pass
         elif choice[0].item() == 1:
+            print(f"ranks: {torch.distributed.get_rank()} choice: {choice[0].item()}, here we have beam search, however we should not be here")
             try:
                 beam_search_and_post_process(model)
             except ValueError as ve:

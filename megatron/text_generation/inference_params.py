@@ -6,10 +6,24 @@ from megatron import get_tokenizer, get_args
 from megatron.text_generation.sampling import sample
 from megatron.text_generation.communication import send_token_and_probs_to_first_pipeline_stage
 from megatron.core import mpu
-
 class InferenceParams:
-    """Inference parameters that are passed to the main model in order
-    to efficienly calculate and store the context during inference."""
+    """
+    Encapsulates all parameters and runtime state needed for
+    efficient, pipeline‐parallel LLM inference with optional early exit.
+
+    Responsibilities:
+      1. Store sampling hyperparameters:
+         - top_k, top_p, temperature, top_p decay/bound
+      2. Manage early‐exit configuration:
+         - threshold (log-prob), enabled layers, per-step flags
+      3. Hold KV-cache across forward passes:
+         - key_value_memory_dict for incremental inference
+      4. Drive sampling & communication:
+         - get_tokens_and_probs(): perform sample() + log-prob gather
+         - send_to_first_pipeline_stage(): route tokens in pipeline setup
+      5. Support batch reordering:
+         - swap_key_value_dict(): permute KV-cache when batching replicas
+    """
 
     def __init__(self, max_batch_size, max_sequence_length,
                  top_k=0, top_p=0, temperature=1.0,
@@ -17,6 +31,19 @@ class InferenceParams:
                  early_exit_thres=None, use_early_exit=False,
                  print_max_prob=False,
                  exit_layers=[]):
+        """
+        Initialize inference context.
+
+        Args:
+            max_batch_size: maximum simultaneous sequences.
+            max_sequence_length: total prompt + generated length.
+            top_k/top_p/temperature: sampling controls.
+            top_p_decay/top_p_bound: dynamic nucleus decay.
+            early_exit_thres: log-prob threshold for early stopping.
+            use_early_exit: whether to enable early-exit logic.
+            print_max_prob: debug‐print selected token probabilities.
+            exit_layers: pipeline stages allowed to early-exit.
+        """
         self.max_sequence_length = max_sequence_length
         self.max_batch_size = max_batch_size
         self.sequence_len_offset = 0

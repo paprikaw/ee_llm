@@ -1,6 +1,55 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-"""Generation utilities."""
+"""
+Generation Utilities Module
+
+This file provides the core token‐level inference routines for Megatron-LM,
+including scoring, sampling, and beam search in both single-stage and
+pipeline-parallel modes, with optional early-exit support.
+
+Key Responsibilities:
+  • score_and_return_on_first_stage:
+      – Compute log-probabilities for a fixed prompt (no generation).
+      – Uses ForwardStep to run a single forward pass and gathers
+        per-token log-probs on the last pipeline stage.
+      – Broadcasts results back to the first stage.
+
+  • generate_tokens_probs_and_return_on_first_stage:
+      – Autoregressive sampling (top-k, nucleus, temperature).
+      – Supports stop-token early termination and optional log-prob tracking.
+      – Iterates from prompt length to max length, invoking ForwardStep
+        each token, updating tokens in place, and copying them back
+        via pipeline communication.
+      – Broadcasts generated tokens, lengths, and log-probs to the first stage.
+
+  • generate_with_pipelined_early_exit_and_return_on_first_stage:
+      – Same as above, but interleaves early-exit checks in intermediate
+        pipeline stages to cut off low-uncertainty samples.
+      – Receives and sends exit signals alongside activations, ensuring
+        correct routing of tokens and probs when early exit occurs.
+
+  • beam_search_and_return_on_first_stage:
+      – Beam search decoding for batch size = 1.
+      – Maintains BeamHypotheses, sorts and prunes beams each step,
+        and communicates beam splits across pipeline stages.
+      – Collects final beams and scores, then broadcasts to the first stage.
+
+  • _build_attention_mask_and_position_ids:
+      – Helper to construct causal attention masks and position ids
+        for left-to-right decoding.
+
+Communication Primitives:
+  – copy_from_last_to_first_pipeline_stage, send/recv_token_and_probs, 
+    broadcast_from_last_to_first_pipeline_stage, etc., manage tensor
+    exchange across pipeline ranks.
+
+Usage:
+  Import and call one of the top-level functions (score, generate, beam_search)
+  depending on desired decoding strategy. On multi-rank setups, only the
+  first stage returns user-visible outputs; other ranks perform
+  compute and communication.
+"""
+
 
 import torch
 import torch.nn.functional as F
@@ -19,7 +68,7 @@ from .inference_params import InferenceParams
 from .forward_step import ForwardStep
 from .sampling import sample
 from .beam_utils import BeamHypotheses
-
+import time
 def score_and_return_on_first_stage(model, tokens, lengths):
     """Function for just scoring.
     Arguments:
@@ -64,11 +113,13 @@ def score_and_return_on_first_stage(model, tokens, lengths):
     # Run infernece
     # =============
     with torch.no_grad():
+
+     
         attention_mask, position_ids = _build_attention_mask_and_position_ids(tokens)
         
         # logits will be meanigful only in the last pipeline stage.
         logits = forward_step(tokens, position_ids, attention_mask)
-
+        
         if mpu.is_pipeline_last_stage():
             # Always the last stage should have an output.
             assert logits is not None
@@ -483,7 +534,6 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
             the generated sequence. size: [b]
         output_log_probs: log probability of the selected tokens. size: [b, s]
     """
-
     args = get_args()
     tokenizer = get_tokenizer()
 
@@ -548,8 +598,7 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
             tokens)
         prev_context_length = 0
         for context_length in range(min_prompt_length, max_sequence_length):
-
-            # Pick the slice that we need to pass through the network.
+            first_stage_start_time = time.perf_counter() if mpu.is_pipeline_first_stage() else None
             tokens2use = tokens[:, prev_context_length:context_length]
             positions2use = position_ids[:, prev_context_length:context_length]
             attention_mask2use = attention_mask[
@@ -561,7 +610,10 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
             # logits will be meanigful only in the last pipeline stage.
             logits = forward_step(tokens2use, positions2use, attention_mask2use)
 
+            # 如果当前是最后一个 stage 且前面的阶段没有early exit，则计算 log_probs
             if mpu.is_pipeline_last_stage() and not (inference_params.has_early_exited or inference_params.prev_has_early_exited):
+                # 记录时间
+
                 last_token_logits = logits[:, -1, :]
 
                 # Calculate the log probabilities.
@@ -606,6 +658,10 @@ def generate_with_pipelined_early_exit_and_return_on_first_stage(
                 recv_token_and_probs(inference_params=inference_params, 
                                      token_tensor_buffer=tokens[:, context_length],
                                      prob_tensor_buffer=output_log_probs[:, context_length - 1])
+                if context_length == min_prompt_length:
+                    print(f"Prefill Time: {time.perf_counter() - first_stage_start_time} ms")
+                else:
+                    print(f"Decode Time: {time.perf_counter() - first_stage_start_time} ms")
             elif mpu.has_early_exit() and not(inference_params.has_early_exited or inference_params.prev_has_early_exited):
                 send_token_and_probs_to_first_pipeline_stage(inference_params=inference_params)
 

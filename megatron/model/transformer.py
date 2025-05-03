@@ -1491,6 +1491,7 @@ class EarlyExitTransformerLayer(MegatronModule):
                 rotary_pos_emb=None,
                 exit_process_func=None,
                 exit_loss_func=None):
+        # 在执行KV-recomputation的时候，可以直接终止后续的计算
         if self.pre_exit:
             exit_output, exit = self._forward_exit(hidden_states=hidden_states,
                                                    inference_params=inference_params,
@@ -2102,6 +2103,7 @@ class EarlyExitParallelTransformer(ParallelTransformer):
                 rotary_pos_emb=None,
                 exit_process_func=None,
                 exit_loss_func=None):
+        # 当stage不为first stage的时候，使用来自prev stage的input_tensor
         if not self.pre_process:
             hidden_states = self.input_tensor
 
@@ -2158,6 +2160,5 @@ class EarlyExitParallelTransformer(ParallelTransformer):
 
         if self.post_process and self.post_norm:
             hidden_states = self.final_norm(hidden_states)
-
         return hidden_states, lazy_early_exit_loss_funcs
  

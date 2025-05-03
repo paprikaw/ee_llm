@@ -55,7 +55,6 @@ if __name__ == "__main__":
 
     if args.load is not None:
         _ = load_checkpoint(model, None, None)
-
     assert len(model) == 1, "Above condition should have caught this"
     model = model[0]
     if mpu.is_pipeline_first_stage() and mpu.get_tensor_model_parallel_rank() == 0:

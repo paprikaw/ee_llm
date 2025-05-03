@@ -51,6 +51,7 @@ nvidia-cuda-mps-control -d
 TOKENIZER_PATH=${TOKENIZER_PATH:?请传入tokenizer的路径}
 # /workspace/assets/checkpoints/EE-LLM-1B-dj-refine-300B/tokenizer.model
 CHECKPOINT_PATH=${CHECKPOINT_PATH:?请传入checkpoint文件的路径}
+DISTRIBUTED_TIMEOUT=${DISTRIBUTED_TIMEOUT:-1}
 # /workspace/assets/checkpoints/EE-LLM-1B-dj-refine-300B/convert-2
 # 并行度设置
 TP=${TP:-1}                  # Tensor 并行度
@@ -77,6 +78,7 @@ DIST_ARGS="\
 SERVER_ARGS="\
   --tensor-model-parallel-size $TP \
   --pipeline-model-parallel-size $PP \
+  --distributed-timeout-minutes $DISTRIBUTED_TIMEOUT \
   --use-checkpoint-args \
   --tokenizer-type SentencePieceTokenizer \
   --tokenizer-model $TOKENIZER_PATH \

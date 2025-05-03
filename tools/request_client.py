@@ -26,7 +26,8 @@ def request(
             "random_seed": int(time.time_ns()) % 16384,
             "echo_prompts": False,
             "early_exit_thres": early_exit_thres,
-            "exit_layers": exit_layers
+            "exit_layers": exit_layers,
+            "temperature": 0 
         }
         if use_early_exit:
             data["use_early_exit"] = True
@@ -64,7 +65,7 @@ if __name__ == "__main__":
         "tools/prompt_example.jsonl",
         tokens_to_generate=50,
         use_early_exit=True,
-        early_exit_thres=1.0,
+        early_exit_thres=0.9,
         print_max_prob=True,
         exit_layers=[]
     )
