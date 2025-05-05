@@ -21,7 +21,7 @@ sudo podman run -dit \
   --name stage1 \
   ee-llm:latest \
   bash
-  # --shm-size=96g \
+   # --shm-size=96g \
 
 # sudo docker run -dit \
 #   --gpus all \
